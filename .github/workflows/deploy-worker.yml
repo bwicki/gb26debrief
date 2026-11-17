@@ -20,6 +20,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          # Secrets ohne Leerzeichen und Zeilenumbrüche (beim Einfügen ins Secret-Feld häufig mitkopiert)
+          export CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')"
+          export CLOUDFLARE_API_TOKEN="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '[:space:]')"
           npm ci --no-audit --no-fund
           npx wrangler d1 execute gb26debrief --remote --yes --file=schema.sql
           npx wrangler deploy
