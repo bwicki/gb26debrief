@@ -1,0 +1,32 @@
+# Deployt den Cloudflare Worker gb26debrief-api bei jeder Änderung unter worker/ und spielt das Schema nach (wiederholbar).
+# Benötigt die Repository-Secrets CLOUDFLARE_API_TOKEN und CLOUDFLARE_ACCOUNT_ID (SETUP.md).
+name: Deploy worker
+on:
+  push:
+    branches: [main]
+    paths: ['worker/**', '.github/workflows/deploy-worker.yml']
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Schema nachziehen und deployen
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm ci --no-audit --no-fund
+          npx wrangler d1 execute gb26debrief --remote --yes --file=schema.sql
+          npx wrangler deploy
+      - name: Gesundheitsprüfung
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if out=$(curl -sS --max-time 20 https://gb26debrief-api.balthasar.workers.dev/api/health); then echo "$out"; echo "$out" | grep -q '"ok":true' && exit 0; fi
+            sleep 5
+          done
+          echo "::warning::/api/health antwortet noch nicht"

@@ -1,0 +1,18 @@
+# gb26debrief.wicki.aero – Cloudflare Worker (API) mit D1
+# Zugang: persönliche Links (Zufallstoken, in D1 nur als SHA-256). Keine Secrets nötig.
+# Logs ausgeschaltet: der Worker speichert keine Anfragedaten (Anonymität, Konzept Kap. 7.5).
+name = "gb26debrief-api"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[observability]
+enabled = false
+
+[vars]
+ALLOWED_ORIGINS = "https://gb26debrief.wicki.aero,https://bwicki.github.io,http://localhost:8765,http://127.0.0.1:8765"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gb26debrief"
+database_id = "56888724-b28c-44e1-8e95-073bf6d20baa"
