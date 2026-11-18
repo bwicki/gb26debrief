@@ -4,10 +4,11 @@
 // schreibt keine Anfragedaten in Logs (Observability in wrangler.toml ausgeschaltet). Anonyme Einträge gibt die API
 // erst nach der Frist heraus, auch an den Admin.
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 const PARTS_NAMED = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 const PARTS_ANON = ['B', 'C', 'D', 'E', 'F', 'G'];
 const MAX_DATA = 64 * 1024;
+const MAX_CONTENT = 256 * 1024;
 
 class HttpError extends Error { constructor(status, code, message) { super(message || code); this.status = status; this.code = code; } }
 const bad = (code, msg) => new HttpError(400, code, msg);
@@ -126,6 +127,11 @@ async function route(req, env, url) {
     await env.DB.prepare('UPDATE participants SET done = ? WHERE id = ?').bind(b.done ? 1 : 0, me.id).run();
     return json({ ok: true, done: !!b.done });
   }
+  if (p === '/api/texts' && M === 'GET') {
+    await who(req, env);
+    const v = await setting(env, 'content');
+    return json({ ok: true, content: v ? JSON.parse(v) : null });
+  }
   if (p === '/api/docs' && M === 'GET') {
     await who(req, env);
     const r = await env.DB.prepare('SELECT id, title, url, body FROM docs ORDER BY sort, created').all();
@@ -198,6 +204,16 @@ async function route(req, env, url) {
         return json({ ok: true, id });
       }
       if (sub.length === 2 && M === 'DELETE') { await env.DB.prepare('DELETE FROM docs WHERE id = ?').bind(sub[1]).run(); return json({ ok: true }); }
+    }
+    if (sub[0] === 'texts' && sub.length === 1 && M === 'PUT') {
+      // Texte und Listen der Oberfläche (Änderungen gegenüber src/content.js); null = zurück auf Standard
+      const b = await body(req);
+      if (b.content == null) { await env.DB.prepare("DELETE FROM settings WHERE k = 'content'").run(); return json({ ok: true }); }
+      if (typeof b.content !== 'object' || Array.isArray(b.content)) throw bad('content', 'Texte: Objekt erwartet');
+      const v = JSON.stringify(b.content);
+      if (v.length > MAX_CONTENT) throw bad('content', 'Texte zu umfangreich');
+      await env.DB.prepare("INSERT INTO settings (k, v) VALUES ('content', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(v).run();
+      return json({ ok: true });
     }
     if (sub[0] === 'settings') {
       if (M === 'GET') return json({ ok: true, deadline: await setting(env, 'deadline'), open: await isOpen(env) });

@@ -25,6 +25,7 @@
     saveConfidential: data => call('PUT', '/api/confidential', { data }),
     setDone: done => call('POST', '/api/done', { done }),
     docs: () => call('GET', '/api/docs').then(j => j.docs),
+    texts: () => call('GET', '/api/texts').then(j => j.content),
     admin: {
       participants: () => call('GET', '/api/admin/participants').then(j => j.participants),
       addParticipant: o => call('POST', '/api/admin/participants', o),
@@ -37,7 +38,8 @@
       addDoc: o => call('POST', '/api/admin/docs', o),
       deleteDoc: id => call('DELETE', '/api/admin/docs/' + id),
       settings: () => call('GET', '/api/admin/settings'),
-      setDeadline: d => call('PUT', '/api/admin/settings', { deadline: d })
+      setDeadline: d => call('PUT', '/api/admin/settings', { deadline: d }),
+      saveTexts: c => call('PUT', '/api/admin/texts', { content: c })
     }
   };
 })(window);
