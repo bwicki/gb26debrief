@@ -4,7 +4,7 @@
 // schreibt keine Anfragedaten in Logs (Observability in wrangler.toml ausgeschaltet). Anonyme Einträge gibt die API
 // erst nach der Frist heraus, auch an den Admin.
 
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 const PARTS_NAMED = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 const PARTS_ANON = ['B', 'C', 'D', 'E', 'F', 'G'];
 const MAX_DATA = 64 * 1024;
@@ -67,7 +67,11 @@ async function who(req, env) {
   if (!p) throw new HttpError(401, 'auth', 'Dieser Link ist nicht (mehr) gültig – bitte bei Balthasar Wicki einen neuen anfordern');
   return p;
 }
-async function admin(req, env) { const p = await who(req, env); if (!p.is_admin) throw new HttpError(403, 'admin', 'Nur für den Admin'); return p; }
+// Rollen (Spalte is_admin): 1 = Admin, 2 = Redaktion (Texte und Ablauf bearbeiten, keine Antworten, keine Links), 0 = Teilnehmende
+const ROLE = { 0: 'teilnehmer', 1: 'admin', 2: 'redaktion' };
+async function admin(req, env) { const p = await who(req, env); if (p.is_admin !== 1) throw new HttpError(403, 'admin', 'Nur für den Admin'); return p; }
+async function editor(req, env) { const p = await who(req, env); if (p.is_admin !== 1 && p.is_admin !== 2) throw new HttpError(403, 'redaktion', 'Nur für Admin und Redaktion'); return p; }
+const zurich = iso => new Date(iso).toLocaleString('de-CH', { timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 async function setting(env, k) { const r = await env.DB.prepare('SELECT v FROM settings WHERE k = ?').bind(k).first(); return r ? r.v : null; }
 async function isOpen(env) { const d = await setting(env, 'deadline'); return !d || Date.now() <= Date.parse(d); }
@@ -89,7 +93,7 @@ async function route(req, env, url) {
     const rows = await env.DB.prepare('SELECT part, data, updated FROM named WHERE participant_id = ?').bind(me.id).all();
     for (const r of rows.results) named[r.part] = { data: JSON.parse(r.data), updated: r.updated };
     const c = await env.DB.prepare('SELECT data, updated FROM confidential WHERE participant_id = ?').bind(me.id).first();
-    return json({ ok: true, version: VERSION, me: { id: me.id, name: me.name, funktion: me.funktion, team: me.team, admin: !!me.is_admin, done: !!me.done },
+    return json({ ok: true, version: VERSION, me: { id: me.id, name: me.name, funktion: me.funktion, team: me.team, admin: me.is_admin === 1, editor: me.is_admin === 1 || me.is_admin === 2, done: !!me.done },
       deadline: await setting(env, 'deadline'), open: await isOpen(env), named, confidential: c ? { data: JSON.parse(c.data), updated: c.updated } : null });
   }
   if (seg[1] === 'named' && seg.length === 3) {
@@ -128,9 +132,31 @@ async function route(req, env, url) {
     return json({ ok: true, done: !!b.done });
   }
   if (p === '/api/texts' && M === 'GET') {
-    await who(req, env);
+    const me = await who(req, env);
     const v = await setting(env, 'content');
-    return json({ ok: true, content: v ? JSON.parse(v) : null });
+    const meta = (me.is_admin === 1 || me.is_admin === 2) ? JSON.parse(await setting(env, 'content_meta') || 'null') : undefined;
+    return json({ ok: true, content: v ? JSON.parse(v) : null, meta });
+  }
+  if ((p === '/api/texts' || p === '/api/admin/texts') && M === 'PUT') {
+    // Texte und Listen der Oberfläche (Abweichungen von src/content.js); null = zurück auf Standard.
+    // base = Stand, auf dem die Bearbeitung beruht; hat inzwischen jemand anders gespeichert, kommt 409 zurück.
+    const me = await editor(req, env);
+    const b = await body(req);
+    const cur = JSON.parse(await setting(env, 'content_meta') || 'null');
+    if (cur && b.base !== cur.v) throw new HttpError(409, 'conflict', `Die Texte wurden inzwischen gespeichert (${cur.by}, ${zurich(cur.at)}).`);
+    let v = null;
+    if (b.content != null) {
+      if (typeof b.content !== 'object' || Array.isArray(b.content)) throw bad('content', 'Texte: Objekt erwartet');
+      v = JSON.stringify(b.content);
+      if (v.length > MAX_CONTENT) throw bad('content', 'Texte zu umfangreich');
+    }
+    const meta = { v: newId(), by: me.name, at: new Date().toISOString() };
+    const up = "INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v";
+    await env.DB.batch([
+      v == null ? env.DB.prepare("DELETE FROM settings WHERE k = 'content'") : env.DB.prepare(up).bind('content', v),
+      env.DB.prepare(up).bind('content_meta', JSON.stringify(meta))
+    ]);
+    return json({ ok: true, meta });
   }
   if (p === '/api/docs' && M === 'GET') {
     await who(req, env);
@@ -149,7 +175,7 @@ async function route(req, env, url) {
         const conf = await env.DB.prepare('SELECT participant_id FROM confidential').all();
         const np = {}; for (const x of parts.results) (np[x.participant_id] = np[x.participant_id] || []).push(x.part);
         const cf = new Set(conf.results.map(x => x.participant_id));
-        return json({ ok: true, participants: r.results.map(x => ({ ...x, is_admin: !!x.is_admin, done: !!x.done, named_parts: (np[x.id] || []).sort(), confidential: cf.has(x.id) })) });
+        return json({ ok: true, participants: r.results.map(x => ({ ...x, is_admin: x.is_admin === 1, rolle: ROLE[x.is_admin] || 'teilnehmer', done: !!x.done, named_parts: (np[x.id] || []).sort(), confidential: cf.has(x.id) })) });
       }
       if (sub.length === 1 && M === 'POST') {
         const b = await body(req);
@@ -164,6 +190,11 @@ async function route(req, env, url) {
         const b = await body(req);
         const cur = await env.DB.prepare('SELECT * FROM participants WHERE id = ?').bind(id).first();
         if (!cur) throw new HttpError(404, 'notfound', 'Person nicht gefunden');
+        if (b.rolle != null) {
+          if (!['teilnehmer', 'redaktion'].includes(b.rolle)) throw bad('rolle', 'Rolle ungültig');
+          if (cur.is_admin === 1) throw bad('rolle', 'Die Rolle des Admins lässt sich hier nicht ändern');
+          await env.DB.prepare('UPDATE participants SET is_admin = ? WHERE id = ?').bind(b.rolle === 'redaktion' ? 2 : 0, id).run();
+        }
         await env.DB.prepare('UPDATE participants SET name = ?, funktion = ?, team = ?, sort = ? WHERE id = ?')
           .bind(b.name != null ? text(b.name, 120, 'Name') : cur.name, b.funktion != null ? text(b.funktion, 200, 'Funktion') : cur.funktion,
             b.team != null ? text(b.team, 100, 'Team') : cur.team, b.sort != null ? Number(b.sort) || 0 : cur.sort, id).run();
@@ -204,16 +235,6 @@ async function route(req, env, url) {
         return json({ ok: true, id });
       }
       if (sub.length === 2 && M === 'DELETE') { await env.DB.prepare('DELETE FROM docs WHERE id = ?').bind(sub[1]).run(); return json({ ok: true }); }
-    }
-    if (sub[0] === 'texts' && sub.length === 1 && M === 'PUT') {
-      // Texte und Listen der Oberfläche (Änderungen gegenüber src/content.js); null = zurück auf Standard
-      const b = await body(req);
-      if (b.content == null) { await env.DB.prepare("DELETE FROM settings WHERE k = 'content'").run(); return json({ ok: true }); }
-      if (typeof b.content !== 'object' || Array.isArray(b.content)) throw bad('content', 'Texte: Objekt erwartet');
-      const v = JSON.stringify(b.content);
-      if (v.length > MAX_CONTENT) throw bad('content', 'Texte zu umfangreich');
-      await env.DB.prepare("INSERT INTO settings (k, v) VALUES ('content', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(v).run();
-      return json({ ok: true });
     }
     if (sub[0] === 'settings') {
       if (M === 'GET') return json({ ok: true, deadline: await setting(env, 'deadline'), open: await isOpen(env) });

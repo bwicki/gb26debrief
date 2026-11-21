@@ -1,6 +1,6 @@
 # Debriefing GB26 — gb26debrief.wicki.aero
 
-**App 0.1.1 · README Dok. 261118-01**
+**App 0.1.2 · README Dok. 261121-01**
 
 Hausaufgabe und gemeinsamer Bereich für das Debriefing Gordon Bennett 2026 des Teams SUI-2 am 18.12.2026
 (Universität Bern und Zoom). Zugang nur mit persönlichem Link, den der Admin je Person erstellt und per WhatsApp
@@ -17,8 +17,19 @@ versendet. Grundlage: Konzept v1.2 (Dropbox «047 Debriefing GB26\01_Konzept»).
 | `#start` | Übersicht, Status der Teile A–H, «Hausaufgabe abgeschlossen», Regeln zur Anonymität | 0.1.0 |
 | `#teil-A` … `#teil-H` | Hausaufgabe: A Person & Funktion, B Gesamtteam, C Zeitstrahl, D Fachbereich, E Retrospektive, F Runbooks, G Ausblick GB27, H vertraulich | 0.1.1 |
 | `#gemeinsam` | Unterlagen, Ablauf 18.12.; Ergebnisse ab 15.12. und Live-Ansicht am 18.12. folgen | 0.1.0 |
-| `#admin` | Teilnehmende, persönliche Links (WhatsApp, Kopieren, Widerrufen), Frist, Auswertung als JSON, Unterlagen | 0.1.1 |
-| `#texte` | nur Admin: alle Texte und Listen der Oberfläche bearbeiten | 0.1.1 |
+| `#admin` | Teilnehmende, Rolle Redaktion, persönliche Links (WhatsApp, Kopieren, Widerrufen), Frist, Auswertung als JSON, Unterlagen | 0.1.2 |
+| `#texte` | Admin und Redaktion: alle Texte und Listen der Oberfläche bearbeiten | 0.1.2 |
+
+## Rollen
+
+| Rolle | `participants.is_admin` | darf |
+|---|---|---|
+| Admin | 1 | alles: Teilnehmende, Links, Frist, Auswertung (auch Teil H), Unterlagen, Texte |
+| Redaktion | 2 | Hausaufgabe wie alle, dazu `#texte` (alle Texte, Listen, Ablauf); keine Antworten, keine Links, keine Admin-Seite |
+| Teilnehmende | 0 | eigene Hausaufgabe, gemeinsamer Bereich |
+
+Die Redaktion vergibt und entzieht der Admin in der Teilnehmerliste («Redaktion geben»). Die Admin-Rolle lässt sich
+dort nicht ändern.
 
 ## Texte und Listen
 
@@ -27,10 +38,14 @@ versendet. Grundlage: Konzept v1.2 (Dropbox «047 Debriefing GB26\01_Konzept»).
   Kategorien, Bereiche, Runbooks, Fragen G und H, Ablauf. Platzhalter: `{vorname}`, `{frist}`, `{link}`.
 * Gespeichert werden nur die Abweichungen vom Standard, in D1 `settings` (`k = 'content'`); sie gelten sofort für
   alle. «Alles auf Standard» und Speichern löscht den Eintrag. Export/Import als JSON.
+* Zwei Personen können gleichzeitig bearbeiten: `settings` `k = 'content_meta'` hält Stand, Name und Zeit der
+  letzten Speicherung. Wer auf einem älteren Stand speichert, erhält 409; die App überträgt die eigenen Änderungen
+  auf den neueren Stand (je Abschnitt, bei gleichem Abschnitt gilt die eigene Fassung) und lässt nochmals speichern.
 * Antworten hängen an der Kennung (`id`) eines Eintrags, nicht am Wortlaut. Einträge mit möglichen Antworten
   werden ausgeblendet (`aus: true`) statt gelöscht; die Antworten bleiben erhalten. Leere Einträge erscheinen
   nicht. Bezugspunkte und Ablauf lassen sich entfernen (keine Antworten daran).
-* API: `GET /api/texts` (Teilnehmende), `PUT /api/admin/texts {content}` (Admin; `null` = Standard, max. 256 KB).
+* API: `GET /api/texts` (Teilnehmende; Admin und Redaktion erhalten zusätzlich `meta`),
+  `PUT /api/texts {content, base}` (Admin und Redaktion; `null` = Standard, max. 256 KB).
 
 ## Zugang
 

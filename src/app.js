@@ -6,7 +6,7 @@
   'use strict';
   const DEF = window.GB26_DEFAULT, CFG = window.GB26CONFIG, API = window.GB26API;
   const app = document.getElementById('app');
-  let C = DEF;
+  let C = DEF, TM = null;   // TM: wer die Texte zuletzt gespeichert hat (nur Admin und Redaktion)
   let S = { me: null, deadline: null, open: true, named: {}, confidential: null };
 
   // ---------- Hilfen ----------
@@ -63,6 +63,20 @@
     return out;
   }
 
+  // Eigene Änderungen (gegenüber base) auf einen neueren Stand (theirs) übertragen; bei gleichem Abschnitt gilt die eigene Fassung
+  function rebase(base, mine, theirs) {
+    const out = clone(theirs), same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    for (const k of Object.keys(mine)) {
+      if (same(mine[k], base[k])) continue;
+      if (mine[k] && typeof mine[k] === 'object' && !Array.isArray(mine[k]) && base[k] && typeof base[k] === 'object' && !Array.isArray(base[k])) {
+        out[k] = Object.assign({}, out[k] || {});
+        for (const j of Object.keys(mine[k])) if (!same(mine[k][j], base[k][j])) out[k][j] = clone(mine[k][j]);
+      } else out[k] = clone(mine[k]);
+    }
+    return out;
+  }
+  const whenText = iso => new Date(iso).toLocaleString('de-CH', { timeZone: 'Europe/Zurich', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
   // ---------- Meldungen: bleiben stehen, kopierbar ----------
   const msgs = el('div', { id: 'msgs', 'aria-live': 'polite' });
   document.body.append(msgs);
@@ -102,7 +116,8 @@
   // ---------- Rahmen ----------
   function shell(active, ...content) {
     const nav = [['start', 'Start'], ['teil-A', 'Hausaufgabe'], ['gemeinsam', 'Gemeinsam']];
-    if (S.me.admin) nav.push(['admin', 'Admin'], ['texte', 'Texte']);
+    if (S.me.admin) nav.push(['admin', 'Admin']);
+    if (S.me.editor) nav.push(['texte', 'Texte']);
     app.replaceChildren(
       el('header', { class: 'top' },
         el('div', { class: 'brand' }, el('strong', { text: 'Debriefing GB26' }), el('span', { class: 'sub', text: 'Team SUI-2 · Hausaufgabe und gemeinsamer Bereich' })),
@@ -341,7 +356,7 @@
         el('button', { class: 'danger', onclick: () => mkLink(p) }, 'Ja, neuer Link'),
         el('button', { class: 'ghost', onclick: () => { confirm.hidden = true; } }, 'Abbrechen'));
       return el('tr', {},
-        el('td', {}, el('b', { text: p.name }), p.is_admin ? el('span', { class: 'badge', text: 'Admin' }) : null, el('div', { class: 'small muted', text: [p.funktion, p.team].filter(Boolean).join(' · ') })),
+        el('td', {}, el('b', { text: p.name }), p.rolle === 'admin' ? el('span', { class: 'badge', text: 'Admin' }) : p.rolle === 'redaktion' ? el('span', { class: 'badge', text: 'Redaktion' }) : null, el('div', { class: 'small muted', text: [p.funktion, p.team].filter(Boolean).join(' · ') })),
         el('td', {}, el('span', { class: 'badge ' + (p.link_state === 'aktiv' ? 'g' : p.link_state === 'widerrufen' ? 'r' : ''), text: p.link_state })),
         el('td', { class: 'mono small', text: (p.named_parts.join(' ') || '–') + (p.confidential ? ' · H' : '') }),
         el('td', {}, p.done ? el('span', { class: 'badge g', text: 'abgeschlossen' }) : el('span', { class: 'muted', text: '–' })),
@@ -349,7 +364,10 @@
           p.link_state === 'aktiv'
             ? [el('button', { class: 'sec', onclick: () => { confirm.hidden = false; } }, 'Neuer Link'), confirm,
                el('button', { class: 'ghost', onclick: async () => { try { await API.admin.revoke(p.id); msg('Link von ' + p.name + ' widerrufen.', 'warn'); viewAdmin(); } catch (e) { err(e); } } }, 'Widerrufen')]
-            : el('button', { onclick: () => mkLink(p) }, 'Link erstellen'))));
+            : el('button', { onclick: () => mkLink(p) }, 'Link erstellen'),
+          p.rolle === 'admin' ? null : el('button', { class: 'ghost', title: 'Redaktion: Texte und Ablauf bearbeiten; keine Antworten, keine Links', onclick: async () => {
+            try { await API.admin.patchParticipant(p.id, { rolle: p.rolle === 'redaktion' ? 'teilnehmer' : 'redaktion' }); msg(p.name + (p.rolle === 'redaktion' ? ': Redaktion entzogen.' : ': Redaktion erteilt.')); viewAdmin(); } catch (e) { err(e); }
+          } }, p.rolle === 'redaktion' ? 'Redaktion entziehen' : 'Redaktion geben'))));
     });
 
     const nf = { name: '', funktion: '', team: '' };
@@ -363,7 +381,7 @@
         el('div', { class: 'tablewrap' }, el('table', { class: 'grid' },
           el('thead', {}, el('tr', {}, ['Name', 'Link', 'Teile mit Namen', 'Hausaufgabe', ''].map(t => el('th', { text: t })))),
           el('tbody', {}, rows))),
-        el('p', { class: 'note', text: 'Anonym abgeschickte Teile erscheinen hier nicht – sie sind keiner Person zugeordnet.' }),
+        el('p', { class: 'note', text: 'Anonym abgeschickte Teile erscheinen hier nicht – sie sind keiner Person zugeordnet. Redaktion: bearbeitet unter «Texte» alle Texte und den Ablauf, sieht aber keine Antworten, keine Links und diese Admin-Seite nicht.' }),
         el('div', { class: 'row' }, tx(nf, 'name', () => {}, 'Name'), tx(nf, 'funktion', () => {}, 'Funktion'), tx(nf, 'team', () => {}, 'Team'),
           el('button', { class: 'sec', onclick: async () => { try { await API.admin.addParticipant(nf); msg(nf.name + ' hinzugefügt.'); viewAdmin(); } catch (e) { err(e); } } }, '+ Person'))),
       el('div', { class: 'card stack' }, el('h2', { text: 'Frist' }),
@@ -400,7 +418,7 @@
   // ---------- Texte (Admin) ----------
   let E = null, dirty = false;
   function viewTexte() {
-    if (!S.me.admin) return viewStart();
+    if (!S.me.editor) return viewStart();
     if (!E) E = clone(C);
     const ch = () => { dirty = true; const s = document.getElementById('texte-st'); if (s) s.textContent = 'Ungespeicherte Änderungen'; };
     const rr = () => { const y = window.scrollY; const open = [...document.querySelectorAll('details[data-sec]')].filter(x => x.open).map(x => x.dataset.sec); viewTexte(); document.querySelectorAll('details[data-sec]').forEach(x => { if (open.includes(x.dataset.sec)) x.open = true; }); window.scrollTo(0, y); };
@@ -435,17 +453,33 @@
     const sec = (title, resetBtn, ...body) => el('details', { class: 'card', 'data-sec': String(n++) }, el('summary', {}, el('b', { text: title }), ' ', resetBtn || null), el('div', { class: 'stack', style: 'margin-top:10px' }, ...body));
 
     const bar = el('div', { class: 'card spread', style: 'position:sticky;top:0;z-index:5' },
-      el('div', { class: 'stack' }, el('b', { text: 'Texte bearbeiten' }), el('span', { id: 'texte-st', class: 'small muted', text: dirty ? 'Ungespeicherte Änderungen' : 'Gespeicherter Stand' })),
+      el('div', { class: 'stack' }, el('b', { text: 'Texte bearbeiten' }), el('span', { id: 'texte-st', class: 'small muted', text: dirty ? 'Ungespeicherte Änderungen' : 'Gespeicherter Stand' }),
+        TM ? el('span', { class: 'small muted', text: 'Zuletzt gespeichert: ' + TM.by + ', ' + whenText(TM.at) }) : null),
       el('div', { class: 'row' },
-        el('button', { onclick: async () => { try { const ov = diff(DEF, E); await API.admin.saveTexts(Object.keys(ov).length ? ov : null); C = merge(DEF, ov); E = clone(C); dirty = false; msg('Texte gespeichert – gelten ab sofort für alle.'); rr(); } catch (e) { err(e); } } }, 'Speichern'),
+        el('button', { onclick: saveTexte }, 'Speichern'),
         el('button', { class: 'sec', onclick: () => { E = clone(C); dirty = false; rr(); } }, 'Verwerfen'),
         el('button', { class: 'sec', onclick: () => download('gb26debrief_texte', E) }, 'Export'),
         el('label', { class: 'btn sec' }, 'Import', el('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: async e => { try { const f = e.target.files[0]; E = merge(DEF, JSON.parse(await f.text())); dirty = true; msg('Import geladen – mit «Speichern» übernehmen.', 'warn'); rr(); } catch (x) { err(x); } } })),
         el('button', { class: 'ghost', onclick: () => { E = clone(DEF); dirty = true; msg('Alle Texte auf Standard gesetzt – mit «Speichern» übernehmen.', 'warn'); rr(); } }, 'Alles auf Standard')));
 
+    async function saveTexte() {
+      try {
+        const ov = diff(DEF, E);
+        const r = await API.saveTexts(Object.keys(ov).length ? ov : null, TM && TM.v);
+        TM = r.meta; C = merge(DEF, ov); E = clone(C); dirty = false;
+        msg('Texte gespeichert – gelten ab sofort für alle.'); rr();
+      } catch (e) {
+        if (e.status !== 409) return err(e);
+        try {   // jemand anders hat inzwischen gespeichert: eigene Änderungen auf dessen Stand übertragen
+          const t = await API.texts(); const theirs = merge(DEF, t.content);
+          E = rebase(C, E, theirs); C = theirs; TM = t.meta; dirty = true;
+          msg(e.message + ' Deine Änderungen sind auf diesen Stand übertragen; wo ihr beide denselben Text oder dieselbe Liste geändert habt, steht jetzt deine Fassung. Bitte prüfen und nochmals speichern.', 'warn'); rr();
+        } catch (x) { err(x); }
+      }
+    }
     const T = E.texte;
     shell('texte', bar,
-      el('p', { class: 'note', text: 'Platzhalter: {vorname}, {frist}, {link}. Antworten hängen an der Kennung eines Eintrags, nicht am Wortlaut: Texte dürfen frei geändert werden. Einträge mit möglichen Antworten werden ausgeblendet statt gelöscht; die Antworten bleiben erhalten. «Standard» stellt einen Abschnitt wieder her; wirksam wird alles erst mit «Speichern».' }),
+      el('p', { class: 'note', text: 'Admin und Redaktion bearbeiten dieselben Texte; wer später speichert, bekommt den neueren Stand angezeigt und speichert dann nochmals. Platzhalter: {vorname}, {frist}, {link}. Antworten hängen an der Kennung eines Eintrags, nicht am Wortlaut: Texte dürfen frei geändert werden. Einträge mit möglichen Antworten werden ausgeblendet statt gelöscht; die Antworten bleiben erhalten. «Standard» stellt einen Abschnitt wieder her; wirksam wird alles erst mit «Speichern».' }),
       sec('Startseite und Allgemein', reset('texte'),
         fT(T, 'termin', 'Termin'), fT(T, 'start_titel', 'Begrüssung'), fT(T, 'start_ziel', 'Ziel', true), fT(T, 'start_frist', 'Hinweis zur Frist', true),
         fT(T, 'anon_titel', 'Titel Anonymität'), fT(T, 'anon_regeln', 'Regeln zur Anonymität', 'big', 'Eine Regel pro Zeile.'),
@@ -510,7 +544,8 @@
     try {
       const [j, tx] = await Promise.all([API.me(), API.texts().catch(() => null)]);
       S = { me: j.me, deadline: j.deadline, open: j.open, named: j.named || {}, confidential: j.confidential };
-      C = merge(DEF, tx);
+      S.me.editor = !!(S.me.editor || S.me.admin);
+      C = merge(DEF, tx && tx.content); TM = (tx && tx.meta) || null; E = null;
     } catch (e) {
       if (e.status === 401) { API.setToken(null); return gate(e.message); }
       return gate('Die App ist im Moment nicht erreichbar: ' + e.message);
