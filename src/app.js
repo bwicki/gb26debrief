@@ -318,10 +318,24 @@
     shell('gemeinsam', el('h1', { text: 'Gemeinsamer Bereich' }), el('div', { class: 'card', text: 'Wird geladen …' }));
     let docs = [];
     try { docs = await API.docs(); } catch (e) { err(e); }
+    const ed = S.me.editor;   // Admin und Redaktion: Unterlagen hinzufügen und entfernen
+    const rmBtn = x => {
+      const ok = el('span', { hidden: true },
+        el('button', { class: 'danger', onclick: async () => { try { await API.deleteDoc(x.id); msg('Unterlage «' + x.title + '» entfernt.', 'warn'); viewShared(); } catch (e) { err(e); } } }, 'Ja, entfernen'),
+        el('button', { class: 'ghost', onclick: () => { ok.hidden = true; } }, 'Abbrechen'));
+      return el('span', {}, el('button', { class: 'ghost', onclick: () => { ok.hidden = false; } }, 'entfernen'), ok);
+    };
+    const nd = { title: '', url: '', body: '' };
     shell('gemeinsam', el('h1', { text: 'Gemeinsamer Bereich' }),
       el('div', { class: 'card stack' }, el('h2', { text: 'Unterlagen' }),
-        docs.length ? el('ul', {}, docs.map(x => el('li', {}, x.url ? el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.title }) : el('b', { text: x.title }), x.body ? el('div', { class: 'small', style: 'white-space:pre-wrap', text: x.body }) : null)))
-          : el('p', { class: 'note', text: 'Noch keine Unterlagen.' })),
+        docs.length ? el('ul', {}, docs.map(x => el('li', {}, x.url ? el('a', { href: x.url, target: '_blank', rel: 'noopener', text: x.title }) : el('b', { text: x.title }), ed ? [' ', rmBtn(x)] : null, x.body ? el('div', { class: 'small', style: 'white-space:pre-wrap', text: x.body }) : null)))
+          : el('p', { class: 'note', text: 'Noch keine Unterlagen.' }),
+        ed ? el('details', {}, el('summary', { text: '+ Unterlage hinzufügen' }),
+          el('div', { class: 'stack', style: 'margin-top:10px' },
+            el('div', { class: 'row' }, tx(nd, 'title', () => {}, 'Titel'), tx(nd, 'url', () => {}, 'Link https://… (optional)')),
+            ta(nd, 'body', () => {}, 'Text (optional)'),
+            el('div', {}, el('button', { class: 'sec', onclick: async () => { try { await API.addDoc(nd); msg('Unterlage «' + nd.title + '» hinzugefügt.'); viewShared(); } catch (e) { err(e); } } }, 'Hinzufügen')),
+            el('p', { class: 'note', text: 'Sichtbar für alle Teilnehmenden. Ein Link führt auf eine Seite ausserhalb der App (z. B. Notion, Dropbox); dort gelten deren Zugriffsrechte.' }))) : null),
       el('div', { class: 'card stack' }, el('h2', { text: 'Ablauf 18.12.2026' }),
         el('table', { class: 'grid' }, el('tbody', {}, (C.ablauf || []).map(a => el('tr', {}, el('td', { class: 'mono', text: a.z }), el('td', { text: a.t })))))),
       el('div', { class: 'card stack' }, el('h2', { text: 'Ergebnisse und Live-Ansicht' }), el('p', { class: 'note', text: fill(C.texte.gemeinsam_ergebnisse) })));
@@ -365,7 +379,7 @@
             ? [el('button', { class: 'sec', onclick: () => { confirm.hidden = false; } }, 'Neuer Link'), confirm,
                el('button', { class: 'ghost', onclick: async () => { try { await API.admin.revoke(p.id); msg('Link von ' + p.name + ' widerrufen.', 'warn'); viewAdmin(); } catch (e) { err(e); } } }, 'Widerrufen')]
             : el('button', { onclick: () => mkLink(p) }, 'Link erstellen'),
-          p.rolle === 'admin' ? null : el('button', { class: 'ghost', title: 'Redaktion: Texte und Ablauf bearbeiten; keine Antworten, keine Links', onclick: async () => {
+          p.rolle === 'admin' ? null : el('button', { class: 'ghost', title: 'Redaktion: Texte, Ablauf und Unterlagen bearbeiten; keine Antworten, keine Links', onclick: async () => {
             try { await API.admin.patchParticipant(p.id, { rolle: p.rolle === 'redaktion' ? 'teilnehmer' : 'redaktion' }); msg(p.name + (p.rolle === 'redaktion' ? ': Redaktion entzogen.' : ': Redaktion erteilt.')); viewAdmin(); } catch (e) { err(e); }
           } }, p.rolle === 'redaktion' ? 'Redaktion entziehen' : 'Redaktion geben'))));
     });
@@ -373,7 +387,6 @@
     const nf = { name: '', funktion: '', team: '' };
     const doneN = A.list.filter(p => p.done).length, activeN = A.list.filter(p => p.link_state === 'aktiv').length;
     const dl = el('input', { type: 'datetime-local', value: S.deadline ? toLocalInput(S.deadline) : '' });
-    const nd = { title: '', url: '', body: '' };
 
     shell('admin', el('h1', { text: 'Admin' }), box,
       el('div', { class: 'card stack' },
@@ -381,7 +394,7 @@
         el('div', { class: 'tablewrap' }, el('table', { class: 'grid' },
           el('thead', {}, el('tr', {}, ['Name', 'Link', 'Teile mit Namen', 'Hausaufgabe', ''].map(t => el('th', { text: t })))),
           el('tbody', {}, rows))),
-        el('p', { class: 'note', text: 'Anonym abgeschickte Teile erscheinen hier nicht – sie sind keiner Person zugeordnet. Redaktion: bearbeitet unter «Texte» alle Texte und den Ablauf, sieht aber keine Antworten, keine Links und diese Admin-Seite nicht.' }),
+        el('p', { class: 'note', text: 'Anonym abgeschickte Teile erscheinen hier nicht – sie sind keiner Person zugeordnet. Redaktion: bearbeitet unter «Texte» alle Texte und den Ablauf sowie die Unterlagen im gemeinsamen Bereich, sieht aber keine Antworten, keine Links und diese Admin-Seite nicht.' }),
         el('div', { class: 'row' }, tx(nf, 'name', () => {}, 'Name'), tx(nf, 'funktion', () => {}, 'Funktion'), tx(nf, 'team', () => {}, 'Team'),
           el('button', { class: 'sec', onclick: async () => { try { await API.admin.addParticipant(nf); msg(nf.name + ' hinzugefügt.'); viewAdmin(); } catch (e) { err(e); } } }, '+ Person'))),
       el('div', { class: 'card stack' }, el('h2', { text: 'Frist' }),
@@ -394,19 +407,8 @@
           el('button', { class: 'sec', disabled: S.open ? true : null, onclick: () => dump('gb26debrief_anonym', API.admin.anon) }, S.open ? 'Anonyme Teile (ab Frist)' : 'Anonyme Teile'),
           el('button', { class: 'sec', onclick: () => dump('gb26debrief_texte', async () => C) }, 'Texte und Fragen')),
         el('p', { class: 'note', text: 'Die Antworten enthalten die Kennungen der Fragen; «Texte und Fragen» liefert dazu den Wortlaut.' })),
-      el('div', { class: 'card stack' }, el('h2', { text: 'Unterlagen im gemeinsamen Bereich' }),
-        el('div', { class: 'row' }, tx(nd, 'title', () => {}, 'Titel'), tx(nd, 'url', () => {}, 'Link https://… (optional)')),
-        ta(nd, 'body', () => {}, 'Text (optional)'),
-        el('div', {}, el('button', { class: 'sec', onclick: async () => { try { await API.admin.addDoc(nd); msg('Unterlage hinzugefügt.'); docsAdmin(); } catch (e) { err(e); } } }, '+ Unterlage')),
-        el('div', { id: 'docsadmin' })));
-    docsAdmin();
-  }
-  async function docsAdmin() {
-    const t = document.getElementById('docsadmin'); if (!t) return;
-    try {
-      const docs = await API.docs();
-      t.replaceChildren(el('ul', {}, docs.map(x => el('li', {}, x.title + ' ', el('button', { class: 'ghost', onclick: async () => { try { await API.admin.deleteDoc(x.id); docsAdmin(); } catch (e) { err(e); } } }, 'entfernen')))));
-    } catch (e) { err(e); }
+      el('div', { class: 'card stack' }, el('h2', { text: 'Unterlagen' }),
+        el('p', { class: 'note' }, 'Unterlagen fügen Admin und Redaktion direkt im ', el('a', { href: '#gemeinsam', text: 'gemeinsamen Bereich' }), ' hinzu oder entfernen sie dort.')));
   }
   function toLocalInput(iso) { const d = new Date(iso); const z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; }
   function download(name, obj) {

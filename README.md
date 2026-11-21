@@ -1,6 +1,6 @@
 # Debriefing GB26 — gb26debrief.wicki.aero
 
-**App 0.1.2 · README Dok. 261121-01**
+**App 0.1.3 · README Dok. 261121-02**
 
 Hausaufgabe und gemeinsamer Bereich für das Debriefing Gordon Bennett 2026 des Teams SUI-2 am 18.12.2026
 (Universität Bern und Zoom). Zugang nur mit persönlichem Link, den der Admin je Person erstellt und per WhatsApp
@@ -16,8 +16,8 @@ versendet. Grundlage: Konzept v1.2 (Dropbox «047 Debriefing GB26\01_Konzept»).
 |---|---|---|
 | `#start` | Übersicht, Status der Teile A–H, «Hausaufgabe abgeschlossen», Regeln zur Anonymität | 0.1.0 |
 | `#teil-A` … `#teil-H` | Hausaufgabe: A Person & Funktion, B Gesamtteam, C Zeitstrahl, D Fachbereich, E Retrospektive, F Runbooks, G Ausblick GB27, H vertraulich | 0.1.1 |
-| `#gemeinsam` | Unterlagen, Ablauf 18.12.; Ergebnisse ab 15.12. und Live-Ansicht am 18.12. folgen | 0.1.0 |
-| `#admin` | Teilnehmende, Rolle Redaktion, persönliche Links (WhatsApp, Kopieren, Widerrufen), Frist, Auswertung als JSON, Unterlagen | 0.1.2 |
+| `#gemeinsam` | Unterlagen (Admin und Redaktion fügen hinzu und entfernen), Ablauf 18.12.; Ergebnisse ab 15.12. und Live-Ansicht am 18.12. folgen | 0.1.3 |
+| `#admin` | Teilnehmende, Rolle Redaktion, persönliche Links (WhatsApp, Kopieren, Widerrufen), Frist, Auswertung als JSON | 0.1.3 |
 | `#texte` | Admin und Redaktion: alle Texte und Listen der Oberfläche bearbeiten | 0.1.2 |
 
 ## Rollen
@@ -25,7 +25,7 @@ versendet. Grundlage: Konzept v1.2 (Dropbox «047 Debriefing GB26\01_Konzept»).
 | Rolle | `participants.is_admin` | darf |
 |---|---|---|
 | Admin | 1 | alles: Teilnehmende, Links, Frist, Auswertung (auch Teil H), Unterlagen, Texte |
-| Redaktion | 2 | Hausaufgabe wie alle, dazu `#texte` (alle Texte, Listen, Ablauf); keine Antworten, keine Links, keine Admin-Seite |
+| Redaktion | 2 | Hausaufgabe wie alle, dazu `#texte` (alle Texte, Listen, Ablauf) und Unterlagen im gemeinsamen Bereich (`POST /api/docs`, `DELETE /api/docs/:id`); keine Antworten, keine Links, keine Admin-Seite |
 | Teilnehmende | 0 | eigene Hausaufgabe, gemeinsamer Bereich |
 
 Die Redaktion vergibt und entzieht der Admin in der Teilnehmerliste («Redaktion geben»). Die Admin-Rolle lässt sich

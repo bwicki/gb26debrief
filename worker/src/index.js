@@ -4,7 +4,7 @@
 // schreibt keine Anfragedaten in Logs (Observability in wrangler.toml ausgeschaltet). Anonyme Einträge gibt die API
 // erst nach der Frist heraus, auch an den Admin.
 
-const VERSION = '0.1.2';
+const VERSION = '0.1.3';
 const PARTS_NAMED = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 const PARTS_ANON = ['B', 'C', 'D', 'E', 'F', 'G'];
 const MAX_DATA = 64 * 1024;
@@ -76,6 +76,15 @@ const zurich = iso => new Date(iso).toLocaleString('de-CH', { timeZone: 'Europe/
 async function setting(env, k) { const r = await env.DB.prepare('SELECT v FROM settings WHERE k = ?').bind(k).first(); return r ? r.v : null; }
 async function isOpen(env) { const d = await setting(env, 'deadline'); return !d || Date.now() <= Date.parse(d); }
 async function requireOpen(env) { if (!(await isOpen(env))) throw new HttpError(409, 'closed', 'Die Frist für die Hausaufgabe ist abgelaufen'); }
+
+async function addDoc(env, b) {
+  const title = text(b.title, 200, 'Titel'); if (!title) throw bad('title', 'Titel fehlt');
+  const u = text(b.url, 1000, 'Link'); if (u && !/^https:\/\//.test(u)) throw bad('url', 'Link muss mit https:// beginnen');
+  const id = newId();
+  await env.DB.prepare('INSERT INTO docs (id, title, url, body, sort, created) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, title, u, text(b.body, 20000, 'Text'), Number(b.sort) || 0, today()).run();
+  return id;
+}
 
 // ---------- Routen ----------
 async function route(req, env, url) {
@@ -163,6 +172,9 @@ async function route(req, env, url) {
     const r = await env.DB.prepare('SELECT id, title, url, body FROM docs ORDER BY sort, created').all();
     return json({ ok: true, docs: r.results });
   }
+  // Unterlagen im gemeinsamen Bereich: Admin und Redaktion
+  if (p === '/api/docs' && M === 'POST') { await editor(req, env); return json({ ok: true, id: await addDoc(env, await body(req)) }); }
+  if (seg[1] === 'docs' && seg.length === 3 && M === 'DELETE') { await editor(req, env); await env.DB.prepare('DELETE FROM docs WHERE id = ?').bind(seg[2]).run(); return json({ ok: true }); }
 
   // ----- Admin -----
   if (seg[1] === 'admin') {
@@ -225,15 +237,7 @@ async function route(req, env, url) {
       return json({ ok: true, items: r.results.map(x => ({ part: x.part, funktion: x.funktion, data: JSON.parse(x.data) })) });
     }
     if (sub[0] === 'docs') {
-      if (sub.length === 1 && M === 'POST') {
-        const b = await body(req);
-        const title = text(b.title, 200, 'Titel'); if (!title) throw bad('title', 'Titel fehlt');
-        const u = text(b.url, 1000, 'Link'); if (u && !/^https:\/\//.test(u)) throw bad('url', 'Link muss mit https:// beginnen');
-        const id = newId();
-        await env.DB.prepare('INSERT INTO docs (id, title, url, body, sort, created) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(id, title, u, text(b.body, 20000, 'Text'), Number(b.sort) || 0, today()).run();
-        return json({ ok: true, id });
-      }
+      if (sub.length === 1 && M === 'POST') return json({ ok: true, id: await addDoc(env, await body(req)) });
       if (sub.length === 2 && M === 'DELETE') { await env.DB.prepare('DELETE FROM docs WHERE id = ?').bind(sub[1]).run(); return json({ ok: true }); }
     }
     if (sub[0] === 'settings') {
